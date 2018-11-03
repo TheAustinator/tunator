@@ -1,3 +1,6 @@
 .ipynb_checkpoints/
 music/*
 __pycache__/
+output.wav
+output_2.wav
+output_D.wav
