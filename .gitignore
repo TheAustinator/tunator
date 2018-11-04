@@ -4,3 +4,8 @@ __pycache__/
 output.wav
 output_2.wav
 output_D.wav
+.idea/
+preprocessing/Speaker Headphones Test Left and Right, Ensure your left and right speakers are connected correctly.-hTvJoYnpeRQ.wav
+preprocessing/stereo_isolated.wav
+preprocessing/voice_isolated.wav
+preprocessing/working_dir/
