@@ -15,14 +15,21 @@ import ipdb
 
 
 def main():
-    dir_ = '../music/mini_classical_violin'
-    filepath_list = [os.path.join(dir_, fname) for fname in os.listdir(dir_)]
-    batch_size = len(filepath_list)
-    sample_range = (500, 1000)
-    sample_len = sample_range[1] - sample_range[0]
-    n_features = 28
-    hidden_size = 64
-    X_batch, Y_batch = next(gen_batch_tensor(filepath_list, batch_size=batch_size, sample_range=sample_range))
+    if os.path.isfile('X_batch.np') and os.path.isfile('Y_batch.py'):
+        X_batch = np.load('X_batch.np')
+        Y_batch = np.load('Y_batch.np')
+    else:
+        dir_ = '../music/mini_classical_violin'
+        filepath_list = [os.path.join(dir_, fname) for fname in os.listdir(dir_)]
+        batch_size = len(filepath_list)
+        sample_range = (500, 1000)
+        sample_len = sample_range[1] - sample_range[0]
+        n_features = 28
+        hidden_size = 64
+
+        X_batch, Y_batch = next(gen_batch_tensor(filepath_list, batch_size=batch_size, sample_range=sample_range))
+        np.save('X_batch.np', X_batch)
+        np.save('Y_batch.np', Y_batch)
 
     def build_model(timesteps, hidden_size, n_features):
         reshape = Reshape((1, n_features))

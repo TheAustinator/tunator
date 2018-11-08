@@ -19,6 +19,8 @@ def main():
     tensor_gen = gen_batch_tensor(filepath_list, batch_size=5)
     X_batch, Y_batch = next(tensor_gen)
     print(X_batch.shape, Y_batch.shape)
+    np.save('X_batch.np', X_batch)
+    np.save('Y_batch.np', Y_batch)
 
 
 def open_midi(path, remove_drums=True):
