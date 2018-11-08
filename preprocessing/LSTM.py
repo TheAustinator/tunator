@@ -18,11 +18,11 @@ def main():
     dir_ = '../music/mini_classical_violin'
     filepath_list = [os.path.join(dir_, fname) for fname in os.listdir(dir_)]
     batch_size = len(filepath_list)
-    sample_range = (64, 1000)
+    sample_range = (500, 1000)
     sample_len = sample_range[1] - sample_range[0]
     n_features = 28
     hidden_size = 64
-    X_batch, Y_batch = next(gen_batch_tensor(filepath_list, batch_size=5, sample_range=sample_range))
+    X_batch, Y_batch = next(gen_batch_tensor(filepath_list, batch_size=batch_size, sample_range=sample_range))
 
     def build_model(timesteps, hidden_size, n_features):
         reshape = Reshape((1, n_features))
@@ -57,6 +57,7 @@ def main():
     m = 60
     a0 = np.zeros((batch_size, hidden_size))    # TODO: why batch size?
     c0 = np.zeros((batch_size, hidden_size))    # TODO: why batch size?
+
 
     model.fit([X_batch, a0, c0], list(Y_batch), epochs=100)
 

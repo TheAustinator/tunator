@@ -28,7 +28,8 @@ def open_midi(path, remove_drums=True):
     mf.close()
     if remove_drums:
         for i in range(len(mf.tracks)):
-            mf.tracks[i].events = [ev for ev in mf.tracks[i].events if ev.channel != 10]
+            if 10 in mf.tracks[0].getChannels():
+                mf.tracks[i].events = [ev for ev in mf.tracks[i].events if ev.channel != 10]
 
     score = music21.midi.translate.midiFileToStream(mf)
     return score
@@ -154,7 +155,6 @@ def gen_batch_tensor(file_list, batch_size, sample_range=(500, 1000)):
             time_list = sorted(song_dict)
             end_time = max(time_list)
             min_space = min([j - i for i, j in zip(time_list[:-1], time_list[1:])])
-            np.array(range(int(5 / .25))) * .25
             expected_times = np.array(range(int(end_time / min_space))) * min_space
             missing_times = set(expected_times) - set(time_list)
             if missing_times:
