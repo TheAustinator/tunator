@@ -21,11 +21,12 @@ def main():
     sample_range = (64, 1000)
     sample_len = sample_range[1] - sample_range[0]
     n_features = 28
+    hidden_size = 64
     X_batch, Y_batch = next(gen_batch_tensor(filepath_list, batch_size=5, sample_range=sample_range))
 
     def build_model(timesteps, hidden_size, n_features):
         reshape = Reshape((1, n_features))
-        lstm = CuDNNLSTM(64, return_state=True)    # recurrent_dropout=0.2,
+        lstm = CuDNNLSTM(hidden_size, return_state=True)    # recurrent_dropout=0.2,
         dense = Dense(n_features)
 
         X = Input(shape=(timesteps, n_features))
@@ -45,7 +46,6 @@ def main():
         model = Model(inputs=[X, a0, c0], outputs=outputs)
         return model
 
-    hidden_size = 512
     model = build_model(timesteps=sample_len, hidden_size=hidden_size, n_features=n_features)
     opt = Adam(lr=0.01, beta_1=0.9, beta_2=0.999, decay=0.01)
 
