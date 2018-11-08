@@ -3,35 +3,18 @@ import itertools
 import numpy as np
 import librosa
 import os
+import matplotlib.pyplot as plt
 
 import ipdb
 
 
 RING_BUFFER_SIZE = 40
 SAMPLE_RATE = 22050
-THRESHOLD_MULTIPLIER = 5
+# THRESHOLD_MULTIPLIER = 5
 WINDOW_SIZE = 2048
-THRESHOLD_WINDOW_SIZE = 7
+# THRESHOLD_WINDOW_SIZE = 7
 
 np.set_printoptions(threshold=np.nan)
-
-
-def main():
-    os.chdir('working_dir')
-    spectral_analyzer = SpectralAnalyzer(
-        window_size=WINDOW_SIZE,
-        segments_buf=RING_BUFFER_SIZE,
-    )
-    y, sample_rate = librosa.load('vocals_isolated_phased.wav')
-    freq_arr = np.array([])
-    # iterate over wav file in chunks of WINDOW_SIZE
-    for i in range(round(len(y) / WINDOW_SIZE)):
-        window_start = i * WINDOW_SIZE
-        window_end = (i + 1) * WINDOW_SIZE
-        data_array = y[window_start:window_end]
-        freq = spectral_analyzer.process_data(data_array)
-        freq_arr = np.append(freq_arr, [freq])
-    print(freq_arr)
 
 
 class SpectralAnalyzer:
@@ -139,5 +122,61 @@ class SpectralAnalyzer:
         return cepstrum
 
 
-if __name__ == '__main__':
-    main()
+os.chdir('working_dir')
+song, sample_rate = librosa.load('vocals_isolated_phased.wav')
+
+# set up iteration to vary THRESHOLD_MULTIPLIER and THRESHOLD_WINDOW_SIZE
+start_1 = 2
+stop_1 = 11
+step_1 = 2
+range_1 = range(start_1, stop_1, step_1)
+dim_1 = len(range_1)
+start_2 = 6
+stop_2 = 20
+step_2 = 2
+range_2 = range(start_2, stop_2, step_2)
+dim_2 = len(range_2)
+fig = plt.figure()
+
+# Jake VanDerplas implementation
+# for i in range(2):
+#     for j in range(3):
+#         ax[i, j].text(0.5, 0.5, str((i, j)),
+#                       fontsize=18, ha='center')
+
+# vary THRESHOLD_MULTIPLIER
+for i in range_1:
+    THRESHOLD_MULTIPLIER = i
+
+    # vary THRESHOLD_WINDOW_SIZE
+    for j in range_2:
+        THRESHOLD_WINDOW_SIZE = j
+
+        fig
+        # set up plot
+        col = (j - start_2) / step_2
+        row = (i - start_1) / step_1
+        plt_i = (row * dim_2) + col + 1
+        print(f'i: {i}\nj: {j}\ncol: {col}\nrow: {row}\nplt_i: {plt_i}')
+        ax = fig.add_subplot(dim_1, dim_2, plt_i)
+
+        # initialize spectral analyzer with new globals
+        spectral_analyzer = SpectralAnalyzer(
+            window_size=WINDOW_SIZE,
+            segments_buf=RING_BUFFER_SIZE,
+        )
+
+        freq_arr = np.array([])
+        # iterate over wav file in chunks of WINDOW_SIZE
+        for k in range(round(len(song) / WINDOW_SIZE)):
+            window_start = k * WINDOW_SIZE
+            window_end = (k + 1) * WINDOW_SIZE
+            data_array = song[window_start:window_end]
+            freq = spectral_analyzer.process_data(data_array)
+            freq_arr = np.append(freq_arr, [freq])
+        ax.scatter(range(len(freq_arr)), freq_arr, s=4)
+        ax.title.set_text(f'MULTIPLIER: {i}, WINDOW: {j}')
+
+plt.subplots_adjust(hspace=.5)
+plt.show()
+
