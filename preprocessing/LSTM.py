@@ -3,6 +3,8 @@ from keras import Sequential
 from keras.models import Model
 from keras.optimizers import Adam
 from keras.layers import CuDNNLSTM, Dropout, Dense, Activation, Bidirectional, Reshape, LSTM, Lambda, Input, RepeatVector
+from keras.utils.vis_utils import plot_model
+
 from midi_processing import gen_batch_tensor
 import os
 import numpy as np
@@ -15,7 +17,7 @@ import ipdb
 def main():
     dir_ = '../music/mini_classical_violin'
     filepath_list = [os.path.join(dir_, fname) for fname in os.listdir(dir_)]
-    batch_size = 5
+    batch_size = len(filepath_list)
     sample_range = (64, 1000)
     sample_len = sample_range[1] - sample_range[0]
     n_features = 28
@@ -23,7 +25,7 @@ def main():
 
     def build_model(timesteps, hidden_size, n_features):
         reshape = Reshape((1, n_features))
-        lstm = CuDNNLSTM(512, return_state=True)
+        lstm = CuDNNLSTM(512, recurrent_dropout=0.2, return_state=True)
         dense = Dense(n_features)
 
         X = Input(shape=(timesteps, n_features))
@@ -46,14 +48,17 @@ def main():
     hidden_size = 512
     model = build_model(timesteps=sample_len, hidden_size=hidden_size, n_features=n_features)
     opt = Adam(lr=0.01, beta_1=0.9, beta_2=0.999, decay=0.01)
-    print(model.summary())
+
+    # print(model.summary())
+    # plot_model(model, to_file='model_plot.png', show_shapes=True, show_layer_names=True)
+
     model.compile(optimizer=opt, loss='categorical_crossentropy', metrics=['accuracy'])
 
     m = 60
     a0 = np.zeros((batch_size, hidden_size))    # TODO: why batch size?
     c0 = np.zeros((batch_size, hidden_size))    # TODO: why batch size?
 
-    model.fit([X_batch, a0, c0], list(Y_batch), epochs=3)
+    model.fit([X_batch, a0, c0], list(Y_batch), epochs=100)
 
     # model = Sequential()
     #
