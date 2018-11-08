@@ -25,7 +25,7 @@ def main():
 
     def build_model(timesteps, hidden_size, n_features):
         reshape = Reshape((1, n_features))
-        lstm = CuDNNLSTM(512, recurrent_dropout=0.2, return_state=True)
+        lstm = CuDNNLSTM(64, return_state=True)    # recurrent_dropout=0.2,
         dense = Dense(n_features)
 
         X = Input(shape=(timesteps, n_features))
