@@ -5,7 +5,7 @@ import glob
 import random
 from abc import ABC, abstractmethod
 from datetime import datetime
-
+from itertools import islice
 import h5py
 import math
 import os
@@ -27,7 +27,7 @@ def main():
 
 
 class TunatorLSTM:
-    def __init__(self, midi_dir='midi_songs/', hdf5_path='data/songs.hdf5', hparams=None):
+    def __init__(self, midi_dir='music/midi/final_fantasy/', hdf5_path='data/songs.hdf5', hparams=None):
         self.midi_dir = midi_dir
         self.hdf5_path = hdf5_path
         self._hparams = hparams
@@ -62,11 +62,11 @@ class TunatorLSTM:
         defaults = {
             'learning_rate': 0.001,
             'dropout': 0.2,
-            'lstm_units': 1024,
-            'dense_units': 512,
-            'batch_size': 16,
-            'timesteps': 256,
-            'epochs': 10,
+            'lstm_units': 2048,
+            'dense_units': 1024,
+            'batch_size': 8,
+            'timesteps': 128,
+            'epochs': 8,
         }
 
         if isinstance(self._hparams, HParams):
@@ -99,17 +99,17 @@ class TunatorLSTM:
         self.model = Sequential()
         input_shape = (self.hparams.timesteps, self.n_vocab)
 
-        self.model.add(LSTM(
+        self.model.add(CuDNNLSTM(
             self.hparams.lstm_units,
             input_shape=input_shape,
             return_sequences=True,
         ))
         self.model.add(Dropout(self.hparams.dropout))
 
-        self.model.add(LSTM(self.hparams.lstm_units, return_sequences=True))
+        self.model.add(CuDNNLSTM(self.hparams.lstm_units, return_sequences=True))
         self.model.add(Dropout(self.hparams.dropout))
 
-        self.model.add(LSTM(self.hparams.lstm_units, return_sequences=True))
+        self.model.add(CuDNNLSTM(self.hparams.lstm_units, return_sequences=True))
         self.model.add(Dropout(self.hparams.dropout))
 
         self.model.add(TimeDistributed(Dense(self.n_vocab)))
@@ -125,7 +125,8 @@ class TunatorLSTM:
         """ train the neural network """
         timestamp = datetime.now()
         log_name = f'note-chord-one-hot-songs_{timestamp}'
-        tensorboard = TensorBoard(log_dir=f'logs/{log_name}')
+        tensorboard = TensorBoard(log_dir=f'logs/{log_name}', histogram_freq=1, write_graph=True, write_grads=True, batch_size=4) #write_images
+        # if adding embeddings, add those parameters
         checkpoint_name = 'weights-improvement-epoch_{epoch:02d}-loss_{loss:.4f}.hdf5'
         checkpoint = ModelCheckpoint(
             f'checkpoints/{checkpoint_name}',
@@ -135,9 +136,19 @@ class TunatorLSTM:
             mode='min'
         )
 
+        val_slice = list(islice(self.val_tensor_gen, 10))
+        X_val_list = list()
+        Y_val_list = list()
+        for item in val_slice:
+            X_val_list.append(item[0])
+            Y_val_list.append(item[1])
+        X_val = np.concatenate(X_val_list, axis=0)
+        Y_val = np.concatenate(Y_val_list, axis=0)
+        val_data = (X_val, Y_val)
         self.model.fit_generator(
             self.train_tensor_gen,
-            validation_data=self.val_tensor_gen,
+            validation_data=val_data,
+            # validation_steps=10,
             steps_per_epoch=self.train_tensor_gen.n_batches,
             epochs=self.hparams.epochs,
             callbacks=[checkpoint, tensorboard]
