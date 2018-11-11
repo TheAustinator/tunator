@@ -1,11 +1,11 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
-<<<<<<< HEAD
+
 import fractions
 import glob
-=======
 from itertools import islice
->>>>>>> 912d0a5c73d968233013047caf90310b95a81316
+
+from itertools import islice
 import h5py
 import math
 import music21 as m21
@@ -75,19 +75,11 @@ class TunatorLSTM:
         defaults = {
             'learning_rate': 0.001,
             'dropout': 0.2,
-<<<<<<< HEAD
             'lstm_units': 512,
             'dense_units': 512,
             'batch_size': 32,
             'timesteps': 256,
             'epochs': 3,
-=======
-            'lstm_units': 2048,
-            'dense_units': 1024,
-            'batch_size': 8,
-            'timesteps': 128,
-            'epochs': 8,
->>>>>>> 912d0a5c73d968233013047caf90310b95a81316
         }
 
         if isinstance(self._hparams, HParams):
