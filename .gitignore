@@ -1,5 +1,6 @@
 .ipynb_checkpoints/
 music/*
+midi_songs/*
 __pycache__/
 output.wav
 output_2.wav

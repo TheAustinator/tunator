@@ -54,7 +54,7 @@ def main():
         return model
 
     model = build_model(timesteps=sample_len, hidden_size=hidden_size, n_features=n_features)
-    opt = Adam(lr=0.01, beta_1=0.9, beta_2=0.999, decay=0.01)
+    opt = Adam(lr=0.01, beta_1=0.9, beta_2=0.999)    # decay=0.01
 
     # print(model.summary())
     # plot_model(model, to_file='model_plot.png', show_shapes=True, show_layer_names=True)
@@ -64,7 +64,6 @@ def main():
     m = 60
     a0 = np.zeros((batch_size, hidden_size))    # TODO: why batch size?
     c0 = np.zeros((batch_size, hidden_size))    # TODO: why batch size?
-
 
     model.fit([X_batch, a0, c0], list(Y_batch), epochs=100)
 

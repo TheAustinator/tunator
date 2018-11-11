@@ -10,6 +10,8 @@ import matplotlib.lines as mlines
 
 # from ..utils.peek import peek
 
+# TODO: use .highestOffest or highestTime to get len of song
+
 
 def main():
     dir_ = '../music/mini_classical_violin'
@@ -78,6 +80,18 @@ def gen_batch_tensor(file_list, batch_size, sample_range=(500, 1000)):
     # create dict of key relative degrees (1 - 7)
 
     def _gen_score_tensor():
+        def _build_scale_new(_score):
+            key = _score.analyze('key')
+
+            default_degrees = {'A': 0, 'A#': 1, 'B-': 1, 'B': 2, 'C': 3,
+                               'C#': 4, 'D-': 4, 'D': 5, 'D#': 6, 'E-': 6,
+                               'E': 7, 'F': 8, 'F#': 9, 'G-': 10, 'G': 11,
+                               'G#': 11, 'A-': 11}
+            key_idx = default_degrees[key]
+            shifted_degrees = {k: v - key_idx for k, v in default_degrees}
+            degrees = {k: v if v >= 0 else 12 + v for k, v in shifted_degrees}
+            print(key, degrees)
+
         def _build_scale(_score):
             key = _score.analyze('key')
             if key.type == 'major':
