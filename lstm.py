@@ -1,29 +1,42 @@
-""" This module prepares midi file data and feeds it to the neural
-    network for training """
-import fractions
-import glob
-import random
 from abc import ABC, abstractmethod
 from datetime import datetime
+
+import fractions
+import glob
+from itertools import islice
+
 from itertools import islice
 import h5py
 import math
-import os
-import music21
-from music21 import converter, instrument, note, chord
-from keras.models import Sequential
-from keras.layers import Dense, TimeDistributed, Dropout, CuDNNLSTM, Activation, LSTM
-from keras.utils import Sequence
-from keras.callbacks import ModelCheckpoint, TensorBoard
-from tensorflow.contrib.training import HParams
+import music21 as m21
 import numpy as np
+import os
+import random
 import ipdb
+
+from keras.callbacks import ModelCheckpoint, TensorBoard
+from keras.layers import Dense, TimeDistributed, Dropout, CuDNNLSTM, Activation, LSTM
+from keras.models import Sequential
+from keras.utils import Sequence
+from tensorflow.contrib.training import HParams
 
 
 def main():
+    hparams = {
+        'learning_rate': 0.001,
+        'dropout': 0.2,
+        'lstm_units': 512,
+        'dense_units': 512,
+        'batch_size': 32,
+        'timesteps': 256,
+        'epochs': 3,
+    }
+    layers = []
     tunator_lstm = TunatorLSTM()
-    tunator_lstm.build_network()
+    tunator_lstm.build_model()
     tunator_lstm.train()
+    tunator_lstm.compose(128)
+    ipdb.set_trace()
 
 
 class TunatorLSTM:
@@ -62,11 +75,11 @@ class TunatorLSTM:
         defaults = {
             'learning_rate': 0.001,
             'dropout': 0.2,
-            'lstm_units': 2048,
-            'dense_units': 1024,
-            'batch_size': 8,
-            'timesteps': 128,
-            'epochs': 8,
+            'lstm_units': 512,
+            'dense_units': 512,
+            'batch_size': 32,
+            'timesteps': 256,
+            'epochs': 3,
         }
 
         if isinstance(self._hparams, HParams):
@@ -92,12 +105,20 @@ class TunatorLSTM:
             self._hparams.add_hparam(k, v)
 
     @property
-    def n_vocab(self):
-        return len(self.tensor_gen.vocab)
+    def vocab(self):
+        return self.tensor_gen.vocab
 
-    def build_network(self):
+    @property
+    def n_vocab(self):
+        return len(self.vocab)
+
+    @property
+    def timestamp(self):
+        return datetime.now()
+
+    def build_model(self):
         self.model = Sequential()
-        input_shape = (self.hparams.timesteps, self.n_vocab)
+        input_shape = (None, self.n_vocab)
 
         self.model.add(CuDNNLSTM(
             self.hparams.lstm_units,
@@ -121,8 +142,11 @@ class TunatorLSTM:
         self.model.add(TimeDistributed(Activation('softmax')))
         self.model.compile(loss='categorical_crossentropy', optimizer='rmsprop')
 
+    def load_model(self, model_path):
+        self.build_model()
+        self.model.load_weights(model_path)
+
     def train(self):
-        """ train the neural network """
         timestamp = datetime.now()
         log_name = f'note-chord-one-hot-songs_{timestamp}'
         tensorboard = TensorBoard(log_dir=f'logs/{log_name}', histogram_freq=1, write_graph=True, write_grads=True, batch_size=4) #write_images
@@ -165,9 +189,9 @@ class TunatorLSTM:
         song_file_dict = dict(zip(song_names, song_files))
         return song_file_dict
 
-    def query_datastore(self, query, path='songs'):
+    def query_datastore(self, query, grp_path='songs'):
         if os.path.isfile(self.hdf5_path):
-            grp = h5py.File(self.hdf5_path, 'r')[path]
+            grp = h5py.File(self.hdf5_path, 'r')[grp_path]
             keys = list(grp.keys())
         else:
             keys = list()
@@ -184,11 +208,11 @@ class TunatorLSTM:
         def _parse_midi(song):
             file = self.song_file_dict[song]
             print(f'parsing {file}...')
-            midi = converter.parse(file)
+            midi = m21.converter.parse(file)
 
-            # extract piano, or otherp
+            # extract piano, or other
             try:
-                midi_parts = instrument.partitionByInstrument(midi).parts
+                midi_parts = m21.instrument.partitionByInstrument(midi).parts
                 part = midi_parts[0]
                 if not part.partName == 'Piano':
                     pass
@@ -211,9 +235,9 @@ class TunatorLSTM:
                 if time not in notes:
                     notes[time] = set()
 
-                if isinstance(elem, note.Note):
+                if isinstance(elem, m21.note.Note):
                     notes[time].add(str(elem.pitch))
-                elif isinstance(elem, chord.Chord):
+                elif isinstance(elem, m21.chord.Chord):
                     notes[time].update([str(pitch) for pitch in elem.pitches])
                 else:
                     raise ValueError()
@@ -277,6 +301,68 @@ class TunatorLSTM:
             notes_to_parse = _parse_midi(song)
             str_notes, vocab, min_space = _parse_notes(notes_to_parse)
             _write_to_datastore(str_notes, vocab, min_space)
+
+    def compose(self, timesteps):
+        seed_note = None
+        while not seed_note:
+            with h5py.File(self.hdf5_path) as f:
+                grp = f['songs']
+                song_names = list(grp.keys())
+                song_idx = np.random.randint(0, len(song_names))
+                song = grp[song_names[song_idx]]['str_notes']
+                note_idx = np.random.randint(0, len(song))
+                seed_note = song[note_idx]
+        note_to_int = dict((note, i) for i, note in enumerate(self.vocab))
+        int_to_note = dict((i, note) for i, note in enumerate(self.vocab))
+        note_int = note_to_int[seed_note]
+        x = np.zeros(len(note_to_int))
+        x[note_int] = 1
+
+        # generate notes
+        Y_hat = []
+        for note_index in range(timesteps):
+            y_hat = self.model.predict(x)
+            Y_hat.append(y_hat)
+            x = y_hat
+
+        Y_hat_ints = [np.where(vector==1)[0][0] for vector in Y_hat]
+        Y_hat_strs = [int_to_note[int_] for int_ in Y_hat_ints]
+
+        self._output_midi(Y_hat_strs)
+
+        return Y_hat_strs
+
+    def _output_midi(self, Y_hat_strs):
+        timesteps = len(Y_hat_strs)
+        offset = 0
+        output_notes = []
+
+        for event_str in Y_hat_strs:    # chord
+            if '.' in event_str:
+                event_split = event_str.split('.')
+                notes = []
+                for note_str in event_split:
+                    note = m21.note.Note(int(note_str))
+                    m21.note.storedInstrument = m21.instrument.Piano()
+                    notes.append(note)
+                chord = m21.chord.Chord(notes)
+                chord.offset = offset
+                output_notes.append(chord)
+            elif event_str:    # note
+                note = m21.note.Note(event_str)
+                note.offset = offset
+                note.storedInstrument = m21.instrument.Piano()
+                output_notes.append(note)
+            else:    # rest
+                rest = m21.note.Rest()
+                rest.offset = offset
+                rest.storedInstrument = m21.instrument.Piano()
+                output_notes.append(rest)
+
+            offset += .25
+
+        midi = m21.stream.Stream(output_notes)
+        midi.write('midi', fp=f'test_output-{timesteps}-{self.timestamp}.mid')
 
 
 class SongMap:
