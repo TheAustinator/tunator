@@ -38,7 +38,7 @@ def main():
 
 
 class TunatorLSTM:
-    def __init__(self, midi_dir='music/midi/ragtime/', hdf5_path='data/songs.hdf5', hparams=None):
+    def __init__(self, midi_dir='music/midi/final_fantasy/', hdf5_path='data/songs.hdf5', hparams=None):
         self.midi_dir = midi_dir
         self.hdf5_path = hdf5_path
         self._hparams = hparams
@@ -87,7 +87,7 @@ class TunatorLSTM:
     def hparams(self):
         defaults = {
             'learning_rate': 0.001,
-            'dropout': 0.2,
+            'dropout': 0.0,
             'lstm_units': 512,
             'dense_units': 512,
             'batch_size': 32,
@@ -460,7 +460,7 @@ class NoteChordOneHotTensorGen(Sequence):
             for info in batch_info:
                 name = info[0]
                 slice_ = info[1]
-                grp_song = f[f'songs/{name}/str_notes']
+                grp_song = f[f'songs/{name}/notes']
                 seq = grp_song[slice_[0]: slice_[1]].flatten()
                 X = self.build_vector(seq)
                 Y = X[1:]
@@ -495,7 +495,11 @@ class NoteChordOneHotTensorGen(Sequence):
         seq_info = list()
         with h5py.File(self.hdf5_path, 'r') as f:
             for song in self.songs:
-                grp = f[f'songs/{song}/str_notes']
+                try:
+                    grp = f[f'songs/{song}/notes']
+                except:
+                    print(f'song: {song} missing from datastore')
+                    continue
                 song_len = len(grp)
                 n_seq = math.floor(song_len / (self.timesteps + 1))
                 for i in range(n_seq):
@@ -509,7 +513,8 @@ class NoteChordOneHotTensorGen(Sequence):
     def build_vector(self, seq):
         # create a dictionary to map pitches to integers
         X = np.array([np.zeros(self.n_vocab) for i in seq])
-        X[np.arange(len(X)), seq] = 1
+        for i, event in enumerate(seq):
+            X[i][event] = 1
         return X
 
     def on_epoch_end(self):
