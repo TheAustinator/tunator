@@ -23,16 +23,16 @@ from tensorflow.contrib.training import HParams
 
 def main():
     hparams = {
-        'learning_rate': 0.001,
+        'learning_rate': 0.01,
         'dropout': 0.2,
-        'lstm_units': 512,
-        'dense_units': 512,
-        'batch_size': 32,
-        'timesteps': 256,
-        'epochs': 3,
+        'lstm_units': 2048,
+        'dense_units': 2048,
+        'batch_size': 8,
+        'timesteps': 64,
+        'epochs': 8,
     }
     layers = []
-    tunator_lstm = TunatorLSTM()
+    tunator_lstm = TunatorLSTM(hparams=hparams)
     tunator_lstm.build_model()
     tunator_lstm.train()
     tunator_lstm.compose(128)
@@ -44,6 +44,19 @@ class TunatorLSTM:
         self.midi_dir = midi_dir
         self.hdf5_path = hdf5_path
         self._hparams = hparams
+        
+        ipdb.set_trace()
+        scale = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+        sharps = ['A#', 'C#', 'D#', 'F#', 'G#']
+        flats = ['B-', 'D-', 'E-', 'G-', 'A-']
+        sharps_scale = sorted(self.scale + self.sharps)
+        flat_sharp_pairs = zip(flats, sharps)
+        flat_sharp_dict = {pair[0] + str(i): pair[1] + str(i)
+                          for i in range(1, 9) for pair in flat_sharp_pairs}
+        self.piano_roll = [note + str(i) for i in range(1, 9) for note in sharps_scale]
+        self.piano_roll_dict = {note: i for i, note in enumerate(self.piano_roll)}
+        self.piano_roll_dict.update(
+            {flat: self.piano_roll_dict[sharp] for flat, sharp in self.piano_roll_dict.items})
 
         self.song_file_dict = self.get_song_file_dict()
         songs = list(self.song_file_dict)
@@ -52,6 +65,7 @@ class TunatorLSTM:
         self.train_songs = songs[:split]
         self.val_songs = songs[split:]
         self.update_datastore()
+        
         self.tensor_gen = NoteChordOneHotTensorGen(
             songs,
             self.hparams.batch_size,
@@ -115,6 +129,14 @@ class TunatorLSTM:
     @property
     def timestamp(self):
         return datetime.now()
+    
+    @property
+    def sharp_scale(self):
+        return 
+    
+    @staticmethod
+    def note_to_int(note):
+        flats = 
 
     def build_model(self):
         self.model = Sequential()
@@ -139,8 +161,8 @@ class TunatorLSTM:
         self.model.add(TimeDistributed(Dense(self.n_vocab)))
         self.model.add(Dropout(self.hparams.dropout))
 
-        self.model.add(TimeDistributed(Activation('softmax')))
-        self.model.compile(loss='categorical_crossentropy', optimizer='rmsprop')
+        self.model.add(TimeDistributed(Activation('sigmoid')))
+        self.model.compile(loss='binary_crossentropy', optimizer='rmsprop')
 
     def load_model(self, model_path):
         self.build_model()
@@ -167,7 +189,9 @@ class TunatorLSTM:
             X_val_list.append(item[0])
             Y_val_list.append(item[1])
         X_val = np.concatenate(X_val_list, axis=0)
+        del X_val_list
         Y_val = np.concatenate(Y_val_list, axis=0)
+        del Y_val_list
         val_data = (X_val, Y_val)
         self.model.fit_generator(
             self.train_tensor_gen,
@@ -232,13 +256,21 @@ class TunatorLSTM:
             notes = dict()
             for elem in notes_to_parse:
                 time = elem.offset
+                
+                # TODO: remove after time fix
+                if time % 0.5 != 0:
+                    continue
+                
                 if time not in notes:
                     notes[time] = set()
 
                 if isinstance(elem, m21.note.Note):
-                    notes[time].add(str(elem.pitch))
+                    note_int = self.piano_roll_dict[str(elem.pitch)]
+                    notes[time].add(note_int)
                 elif isinstance(elem, m21.chord.Chord):
-                    notes[time].update([str(pitch) for pitch in elem.pitches])
+                    chord = [str(self.piano_roll_dict[str(pitch)]) for pitch in elem.pitches]
+                    chord_int = int(''.join(chord))
+                    notes[time].update()
                 else:
                     raise ValueError()
 
@@ -259,39 +291,38 @@ class TunatorLSTM:
                 raise ValueError()
             end_time = max(time_list)
             min_space = min([j - i for i, j in zip(time_list[:-1], time_list[1:])])
+            """
             expected_times = np.array(range(int(end_time / min_space))) * min_space
             missing_times = set(expected_times) - set(time_list)
             if missing_times:
                 print(f'filling in {len(missing_times)} missing timepoints in '
                       f'existing {len(notes)}...')
                 notes.update({time: set() for time in missing_times})
+            """
+            
+            # convert to half notes
+            
 
             # convert notes to a list of strings
-            str_notes = ['.'.join(sorted(notes[k])) for k in sorted(notes)]
+            #str_notes = ['.'.join(sorted(notes[k])) for k in sorted(notes)]
             # remove leading and trailing rests
-            for i in (0, -1):
-                while str_notes and str_notes[i] == '':
-                    str_notes.pop(i)
+            #for i in (0, -1):
+            #    while str_notes and str_notes[i] == '':
+            #        str_notes.pop(i)
             # encoding required by h5py
-            str_notes = np.array(str_notes).astype('|S9')
+            #str_notes = np.array(str_notes).astype('|S9')
 
-            vocab = np.array(list(set(str_notes))).astype('|S9')
-            return str_notes, vocab, min_space
+            #vocab = np.array(list(set(str_notes))).astype('|S9')
+            return notes, min_space
 
-        def _write_to_datastore(str_notes, vocab, min_space):
+        def _write_to_datastore(notes, min_space):
             with h5py.File(self.hdf5_path, 'a') as f:
                 grp = f.create_group(f'songs/{song}')
-
-                grp.create_dataset(
-                    name='vocab',
-                    shape=(len(vocab), 1),
-                    data=vocab,
-                    dtype='S9')
                 dset_notes = grp.create_dataset(
-                    name='str_notes',
-                    shape=(len(str_notes), 1),
+                    name='notes',
+                    shape=(len(notes), 1),
                     data=str_notes,
-                    dtype='S9')
+                    dtype='i8')
                 dset_notes.attrs['spacing'] = min_space
 
         song_names = set(self.song_file_dict)
@@ -304,6 +335,7 @@ class TunatorLSTM:
 
     def compose(self, timesteps):
         seed_note = None
+        ipdb.set_trace()
         while not seed_note:
             with h5py.File(self.hdf5_path) as f:
                 grp = f['songs']
@@ -311,22 +343,25 @@ class TunatorLSTM:
                 song_idx = np.random.randint(0, len(song_names))
                 song = grp[song_names[song_idx]]['str_notes']
                 note_idx = np.random.randint(0, len(song))
-                seed_note = song[note_idx]
-        note_to_int = dict((note, i) for i, note in enumerate(self.vocab))
-        int_to_note = dict((i, note) for i, note in enumerate(self.vocab))
+                seed_note = song[note_idx][0]
+        note_to_int = {note: i for i, note in enumerate(self.vocab)}
+        int_to_note = {i: note for i, note in enumerate(self.vocab)}
         note_int = note_to_int[seed_note]
         x = np.zeros(len(note_to_int))
         x[note_int] = 1
 
         # generate notes
-        Y_hat = []
-        for note_index in range(timesteps):
+        Y_hat_ints = []
+        for i in range(timesteps):
+            x = np.expand_dims(x, axis=0)
+            x = np.expand_dims(x, axis=0)
             y_hat = self.model.predict(x)
-            Y_hat.append(y_hat)
-            x = y_hat
+            y_hat_int = np.argmax(y_hat[0][0])
+            Y_hat_ints.append(y_hat_int)
+            x = np.zeros(self.n_vocab)
+            x[y_hat_int] = 1
 
-        Y_hat_ints = [np.where(vector==1)[0][0] for vector in Y_hat]
-        Y_hat_strs = [int_to_note[int_] for int_ in Y_hat_ints]
+        Y_hat_strs = [int_to_note[int_].decode() for int_ in Y_hat_ints]
 
         self._output_midi(Y_hat_strs)
 
@@ -359,7 +394,7 @@ class TunatorLSTM:
                 rest.storedInstrument = m21.instrument.Piano()
                 output_notes.append(rest)
 
-            offset += .25
+            offset += 1
 
         midi = m21.stream.Stream(output_notes)
         midi.write('midi', fp=f'test_output-{timesteps}-{self.timestamp}.mid')
