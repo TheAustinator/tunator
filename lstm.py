@@ -36,24 +36,29 @@ def main():
     tunator_lstm.compose(128)
     ipdb.set_trace()
 
+
 class TunatorLSTM:
     def __init__(self, midi_dir='music/midi/ragtime/', hdf5_path='data/songs.hdf5', hparams=None):
         self.midi_dir = midi_dir
         self.hdf5_path = hdf5_path
         self._hparams = hparams
-        
-        ipdb.set_trace()
+
+        octaves = 10
         scale = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
         sharps = ['A#', 'C#', 'D#', 'F#', 'G#']
         flats = ['B-', 'D-', 'E-', 'G-', 'A-']
-        sharps_scale = sorted(self.scale + self.sharps)
-        flat_sharp_pairs = zip(flats, sharps)
-        flat_sharp_dict = {pair[0] + str(i): pair[1] + str(i)
-                          for i in range(1, 9) for pair in flat_sharp_pairs}
-        self.piano_roll = [note + str(i) for i in range(1, 9) for note in sharps_scale]
-        self.piano_roll_dict = {note: i for i, note in enumerate(self.piano_roll)}
+        sharps_scale = sorted(scale + sharps)
+        sharps_oct = [note + str(i) for i in range(octaves) for note in sharps]
+        flats_oct = [note + str(i) for i in range(octaves) for note in flats]
+        flat_sharp_dict = dict(zip(flats_oct, sharps_oct))
+
+        self.piano_roll = [
+            note + str(i) for i in range(octaves) for note in sharps_scale]
+        self.piano_roll_dict = {
+            note: i for i, note in enumerate(self.piano_roll)}
         self.piano_roll_dict.update(
-            {flat: self.piano_roll_dict[sharp] for flat, sharp in self.piano_roll_dict.items})
+            {flat: self.piano_roll_dict[sharp]
+             for flat, sharp in flat_sharp_dict.items()})
 
         self.song_file_dict = self.get_song_file_dict()
         songs = list(self.song_file_dict)
@@ -62,24 +67,21 @@ class TunatorLSTM:
         self.train_songs = songs[:split]
         self.val_songs = songs[split:]
         self.update_datastore()
-        
-        self.tensor_gen = NoteChordOneHotTensorGen(
-            songs,
-            self.hparams.batch_size,
-            self.hparams.timesteps,
-            hdf5_path)
+
         self.train_tensor_gen = NoteChordOneHotTensorGen(
             self.train_songs,
             self.hparams.batch_size,
             self.hparams.timesteps,
             hdf5_path,
-            self.tensor_gen.vocab)
+            self.piano_roll_dict,
+            self.n_vocab)
         self.val_tensor_gen = NoteChordOneHotTensorGen(
             self.val_songs,
             self.hparams.batch_size,
             self.hparams.timesteps,
             hdf5_path,
-            self.tensor_gen.vocab)
+            self.piano_roll_dict,
+            self.n_vocab)
 
     @property
     def hparams(self):
@@ -116,24 +118,12 @@ class TunatorLSTM:
             self._hparams.add_hparam(k, v)
 
     @property
-    def vocab(self):
-        return self.tensor_gen.vocab
-
-    @property
     def n_vocab(self):
-        return len(self.vocab)
+        return len(self.piano_roll)
 
     @property
     def timestamp(self):
         return datetime.now()
-    
-    @property
-    def sharp_scale(self):
-        return 
-    
-    @staticmethod
-    def note_to_int(note):
-        flats = 
 
     def build_model(self):
         self.model = Sequential()
@@ -231,6 +221,14 @@ class TunatorLSTM:
             print(f'updating datastore: {file}...')
             midi = m21.converter.parse(file)
 
+            # transpose to A
+            transpose_dict ={
+                'A#': 11, 'B-': 11, 'B': 10, 'C': 9, 'C#': 8, 'D-': 8, 'D': 7,
+                'D#': 6, 'E-': 6, 'E': 5, 'F': 4, 'F#': 3,'G-': 3, 'G': 2,
+                'G#': 1, 'A-': 1, 'A': 0,
+            }
+            key = midi.analyze('key').getTonic().name
+            midi = midi.transpose(transpose_dict[key])
             # extract piano, or other
             try:
                 midi_parts = m21.instrument.partitionByInstrument(midi).parts
@@ -265,9 +263,8 @@ class TunatorLSTM:
                     note_int = self.piano_roll_dict[str(elem.pitch)]
                     notes[time].add(note_int)
                 elif isinstance(elem, m21.chord.Chord):
-                    chord = [str(self.piano_roll_dict[str(pitch)]) for pitch in elem.pitches]
-                    chord_int = int(''.join(chord))
-                    notes[time].update()
+                    note_ints = [self.piano_roll_dict[str(pitch)] for pitch in elem.pitches]
+                    notes[time].update(note_ints)
                 else:
                     raise ValueError()
 
@@ -297,7 +294,7 @@ class TunatorLSTM:
                 print(f'filling in {len(missing_times)} missing timepoints in '
                       f'existing {len(notes)}...')
                 notes.update({time: set() for time in missing_times})
-            """            
+            """
             # convert to half notes
 
             # convert notes to a list of strings
@@ -313,13 +310,15 @@ class TunatorLSTM:
             return notes, min_space
 
         def _write_to_datastore(notes, min_space):
+            notes_list = np.array([np.array(list(notes[k])).astype('i8') for k in sorted(notes)])
             with h5py.File(self.hdf5_path, 'a') as f:
                 grp = f.create_group(f'songs/{song}')
+                dt = h5py.special_dtype(vlen=np.dtype('int8'))
                 dset_notes = grp.create_dataset(
                     name='notes',
-                    shape=(len(notes), 1),
-                    data=str_notes,
-                    dtype='i8')
+                    shape=(len(notes_list), 1),
+                    data=notes_list,
+                    dtype=dt)
                 dset_notes.attrs['spacing'] = min_space
 
         song_names = set(self.song_file_dict)
@@ -327,24 +326,22 @@ class TunatorLSTM:
 
         for song in missing_songs:
             notes_to_parse = _parse_midi(song)
-            str_notes, vocab, min_space = _parse_notes(notes_to_parse)
-            _write_to_datastore(str_notes, vocab, min_space)
+            notes, min_space = _parse_notes(notes_to_parse)
+            _write_to_datastore(notes, min_space)
 
     def compose(self, timesteps):
         seed_note = None
-        ipdb.set_trace()
         while not seed_note:
             with h5py.File(self.hdf5_path) as f:
                 grp = f['songs']
                 song_names = list(grp.keys())
                 song_idx = np.random.randint(0, len(song_names))
-                song = grp[song_names[song_idx]]['str_notes']
+                song = grp[song_names[song_idx]]['notes']
                 note_idx = np.random.randint(0, len(song))
                 seed_note = song[note_idx][0]
-        note_to_int = {note: i for i, note in enumerate(self.vocab)}
-        int_to_note = {i: note for i, note in enumerate(self.vocab)}
-        note_int = note_to_int[seed_note]
-        x = np.zeros(len(note_to_int))
+
+        note_int = self.piano_roll_dict[seed_note]
+        x = np.zeros(self.n_vocab)
         x[note_int] = 1
 
         # generate notes
@@ -358,14 +355,14 @@ class TunatorLSTM:
             x = np.zeros(self.n_vocab)
             x[y_hat_int] = 1
 
-        Y_hat_strs = [int_to_note[int_].decode() for int_ in Y_hat_ints]
+        rev_piano_roll_dict = {v: k for k, v in self.piano_roll_dict}
+        Y_hat_strs = [rev_piano_roll_dict[int_].decode() for int_ in Y_hat_ints]
 
         self._output_midi(Y_hat_strs)
 
         return Y_hat_strs
 
     def _output_midi(self, Y_hat_strs):
-        ipdb.set_trace()
         timesteps = len(Y_hat_strs)
         offset = 0
         output_notes = []
@@ -437,15 +434,16 @@ class TensorGen(ABC):
 
 
 class NoteChordOneHotTensorGen(Sequence):
-    def __init__(self, songs, batch_size, timesteps, hdf5_path, vocab=None):
+    def __init__(self, songs, batch_size, timesteps, hdf5_path, vocab_dict, n_vocab):
         self.songs = songs
         self.batch_size = batch_size
         self.timesteps = timesteps
         self.hdf5_path = hdf5_path
+        self.vocab_dict = vocab_dict
+        self.n_vocab = n_vocab
 
         self.batch_counter = 0
         self.epoch_counter = 0
-        self._vocab = vocab
         self.seq_info = self.get_seq_info()
         self.n_batches = math.floor(len(self.seq_info) / self.batch_size)
 
@@ -473,23 +471,10 @@ class NoteChordOneHotTensorGen(Sequence):
         X_batch = np.array(X_list)
         Y_batch = np.array(Y_list)
         self.batch_counter += 1
-        try:
-            assert X_batch.shape == Y_batch.shape
-            assert X_batch.shape == (self.batch_size, self.timesteps, len(self.vocab))
-        except:
-            pass
-        return X_batch, Y_batch
+        assert X_batch.shape == Y_batch.shape
+        assert X_batch.shape == (self.batch_size, self.timesteps, self.n_vocab)
 
-    @property
-    def vocab(self):
-        if not self._vocab:
-            vocab = set()
-            with h5py.File(self.hdf5_path, 'r') as f:
-                for song in self.songs:
-                    grp = f[f'songs/{song}/vocab']
-                    vocab.update(list(grp[:].flat))
-            self._vocab = vocab
-        return self._vocab
+        return X_batch, Y_batch
 
     def get_seq_info(self):
         """
@@ -523,11 +508,8 @@ class NoteChordOneHotTensorGen(Sequence):
 
     def build_vector(self, seq):
         # create a dictionary to map pitches to integers
-        note_to_int = dict((note, i) for i, note in enumerate(self.vocab))
-
-        seq_int = [note_to_int[note] for note in seq]
-        X = np.array([np.zeros(len(note_to_int)) for i in seq_int])
-        X[np.arange(len(X)), seq_int] = 1
+        X = np.array([np.zeros(self.n_vocab) for i in seq])
+        X[np.arange(len(X)), seq] = 1
         return X
 
     def on_epoch_end(self):
