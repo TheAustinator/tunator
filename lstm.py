@@ -1,10 +1,8 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
-
 import fractions
 import glob
 from itertools import islice
-
 from itertools import islice
 import h5py
 import math
@@ -38,9 +36,8 @@ def main():
     tunator_lstm.compose(128)
     ipdb.set_trace()
 
-
 class TunatorLSTM:
-    def __init__(self, midi_dir='music/midi/final_fantasy/', hdf5_path='data/songs.hdf5', hparams=None):
+    def __init__(self, midi_dir='music/midi/ragtime/', hdf5_path='data/songs.hdf5', hparams=None):
         self.midi_dir = midi_dir
         self.hdf5_path = hdf5_path
         self._hparams = hparams
@@ -231,7 +228,7 @@ class TunatorLSTM:
         """
         def _parse_midi(song):
             file = self.song_file_dict[song]
-            print(f'parsing {file}...')
+            print(f'updating datastore: {file}...')
             midi = m21.converter.parse(file)
 
             # extract piano, or other
@@ -286,6 +283,8 @@ class TunatorLSTM:
                     notes[nearest_quarter] = v
 
             # fill missing time indices
+            # temporarily remove because only rests were generated
+            
             time_list = sorted(notes)
             if not time_list:
                 raise ValueError()
@@ -298,10 +297,8 @@ class TunatorLSTM:
                 print(f'filling in {len(missing_times)} missing timepoints in '
                       f'existing {len(notes)}...')
                 notes.update({time: set() for time in missing_times})
-            """
-            
+            """            
             # convert to half notes
-            
 
             # convert notes to a list of strings
             #str_notes = ['.'.join(sorted(notes[k])) for k in sorted(notes)]
@@ -368,6 +365,7 @@ class TunatorLSTM:
         return Y_hat_strs
 
     def _output_midi(self, Y_hat_strs):
+        ipdb.set_trace()
         timesteps = len(Y_hat_strs)
         offset = 0
         output_notes = []
