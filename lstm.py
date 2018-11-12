@@ -1,10 +1,8 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
-
 import fractions
 import glob
 from itertools import islice
-
 from itertools import islice
 import h5py
 import math
@@ -25,22 +23,21 @@ def main():
     hparams = {
         'learning_rate': 0.001,
         'dropout': 0.2,
-        'lstm_units': 512,
-        'dense_units': 512,
+        'lstm_units': 1024,
+        'dense_units': 1024,
         'batch_size': 32,
         'timesteps': 256,
         'epochs': 3,
     }
     layers = []
-    tunator_lstm = TunatorLSTM()
+    tunator_lstm = TunatorLSTM(hparams=hparams)
     tunator_lstm.build_model()
     tunator_lstm.train()
     tunator_lstm.compose(128)
     ipdb.set_trace()
 
-
 class TunatorLSTM:
-    def __init__(self, midi_dir='music/midi/final_fantasy/', hdf5_path='data/songs.hdf5', hparams=None):
+    def __init__(self, midi_dir='music/midi/ragtime/', hdf5_path='data/songs.hdf5', hparams=None):
         self.midi_dir = midi_dir
         self.hdf5_path = hdf5_path
         self._hparams = hparams
@@ -207,7 +204,7 @@ class TunatorLSTM:
         """
         def _parse_midi(song):
             file = self.song_file_dict[song]
-            print(f'parsing {file}...')
+            print(f'updating datastore: {file}...')
             midi = m21.converter.parse(file)
 
             # extract piano, or other
@@ -254,17 +251,21 @@ class TunatorLSTM:
                     notes[nearest_quarter] = v
 
             # fill missing time indices
+            # temporarily remove because only rests were generated
+            
             time_list = sorted(notes)
             if not time_list:
                 raise ValueError()
             end_time = max(time_list)
             min_space = min([j - i for i, j in zip(time_list[:-1], time_list[1:])])
+            """
             expected_times = np.array(range(int(end_time / min_space))) * min_space
             missing_times = set(expected_times) - set(time_list)
             if missing_times:
                 print(f'filling in {len(missing_times)} missing timepoints in '
                       f'existing {len(notes)}...')
                 notes.update({time: set() for time in missing_times})
+            """
 
             # convert notes to a list of strings
             str_notes = ['.'.join(sorted(notes[k])) for k in sorted(notes)]
@@ -311,28 +312,32 @@ class TunatorLSTM:
                 song_idx = np.random.randint(0, len(song_names))
                 song = grp[song_names[song_idx]]['str_notes']
                 note_idx = np.random.randint(0, len(song))
-                seed_note = song[note_idx]
-        note_to_int = dict((note, i) for i, note in enumerate(self.vocab))
-        int_to_note = dict((i, note) for i, note in enumerate(self.vocab))
+                seed_note = song[note_idx][0]
+        note_to_int = {note: i for i, note in enumerate(self.vocab)}
+        int_to_note = {i: note for i, note in enumerate(self.vocab)}
         note_int = note_to_int[seed_note]
         x = np.zeros(len(note_to_int))
         x[note_int] = 1
 
         # generate notes
-        Y_hat = []
-        for note_index in range(timesteps):
+        Y_hat_ints = []
+        for i in range(timesteps):
+            x = np.expand_dims(x, axis=0)
+            x = np.expand_dims(x, axis=0)
             y_hat = self.model.predict(x)
-            Y_hat.append(y_hat)
-            x = y_hat
+            y_hat_int = np.argmax(y_hat[0][0])
+            Y_hat_ints.append(y_hat_int)
+            x = np.zeros(self.n_vocab)
+            x[y_hat_int] = 1
 
-        Y_hat_ints = [np.where(vector==1)[0][0] for vector in Y_hat]
-        Y_hat_strs = [int_to_note[int_] for int_ in Y_hat_ints]
+        Y_hat_strs = [int_to_note[int_].decode() for int_ in Y_hat_ints]
 
         self._output_midi(Y_hat_strs)
 
         return Y_hat_strs
 
     def _output_midi(self, Y_hat_strs):
+        ipdb.set_trace()
         timesteps = len(Y_hat_strs)
         offset = 0
         output_notes = []
