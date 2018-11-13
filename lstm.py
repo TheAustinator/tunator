@@ -330,8 +330,8 @@ class TunatorLSTM:
             _write_to_datastore(notes, min_space)
 
     def compose(self, timesteps):
-        seed_note = None
-        while not seed_note:
+        seed_note = np.array([])
+        while seed_note.size == 0:
             with h5py.File(self.hdf5_path) as f:
                 grp = f['songs']
                 song_names = list(grp.keys())
@@ -339,24 +339,26 @@ class TunatorLSTM:
                 song = grp[song_names[song_idx]]['notes']
                 note_idx = np.random.randint(0, len(song))
                 seed_note = song[note_idx][0]
-
-        note_int = self.piano_roll_dict[seed_note]
+        
         x = np.zeros(self.n_vocab)
-        x[note_int] = 1
+        x[seed_note] = 1
 
         # generate notes
-        Y_hat_ints = []
+        Y_hat_inds_seq = []
         for i in range(timesteps):
             x = np.expand_dims(x, axis=0)
             x = np.expand_dims(x, axis=0)
             y_hat = self.model.predict(x)
-            y_hat_int = np.argmax(y_hat[0][0])
-            Y_hat_ints.append(y_hat_int)
+            y_hat_inds = np.argwhere(y_hat > .5).flatten()
+            if y_hat_inds.size == 0:
+                y_hat_inds = np.argmax(y_hat).flatten()
+            Y_hat_inds_seq.append(y_hat_inds)
             x = np.zeros(self.n_vocab)
-            x[y_hat_int] = 1
-
-        rev_piano_roll_dict = {v: k for k, v in self.piano_roll_dict}
-        Y_hat_strs = [rev_piano_roll_dict[int_].decode() for int_ in Y_hat_ints]
+            x[y_hat_inds] = 1
+        
+        ipdb.set_trace()
+        rev_piano_roll_dict = {v: k for k, v in self.piano_roll_dict.items()}
+        Y_hat_strs = [[rev_piano_roll_dict[ind] for ind in Y_hat_inds] for Y_hat_inds in Y_hat_inds_seq]
 
         self._output_midi(Y_hat_strs)
 
@@ -367,19 +369,18 @@ class TunatorLSTM:
         offset = 0
         output_notes = []
 
-        for event_str in Y_hat_strs:    # chord
-            if '.' in event_str:
-                event_split = event_str.split('.')
+        for event_strs in Y_hat_strs:    # chord
+            if len(event_strs) > 1:
                 notes = []
-                for note_str in event_split:
+                for note_str in event_strs:
                     note = m21.note.Note(int(note_str))
                     m21.note.storedInstrument = m21.instrument.Piano()
                     notes.append(note)
                 chord = m21.chord.Chord(notes)
                 chord.offset = offset
                 output_notes.append(chord)
-            elif event_str:    # note
-                note = m21.note.Note(event_str)
+            elif event_strs:    # note
+                note = m21.note.Note(event_strs[0])
                 note.offset = offset
                 note.storedInstrument = m21.instrument.Piano()
                 output_notes.append(note)
