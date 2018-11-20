@@ -38,11 +38,33 @@ def main():
 
 
 class TunatorLSTM:
+    """
+    LSTM model for synthesizing polyphonic MIDI.
+
+    When the class is instantiated,
+    the `update_datastore` method ensures that all the MIDI data from the
+    files in `midi_dir` are stored in the HDF5 at `hdf5_path`. It queries the
+    datastore for the song names in `midi_dir` using the `query_datastore`
+    method, then updates it with any missing songs. The datastore schema is
+    provided in the `update_datastore` method docstring.
+
+    The model is instantiated either via `build_model` or `load_model` and
+    trained via `train`. The model can be sampled via `compose`, which will
+    output a MIDI file.
+
+    Args:
+        midi_dir (str): directory to MIDI files
+        hdf5_path (str): path for HDF5 datastore
+        hparams (dict): any hyperparameters to be changed from defaults.
+            Defaults are shown under `hparams` property. They can also be
+            changed dynamically by passing a dict to the `hparams` setter.
+    """
     def __init__(self, midi_dir='music/midi/final_fantasy/', hdf5_path='data/songs.hdf5', hparams=None):
         self.midi_dir = midi_dir
         self.hdf5_path = hdf5_path
         self._hparams = hparams
 
+        # set up piano roll
         octaves = 10
         scale = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
         sharps = ['A#', 'C#', 'D#', 'F#', 'G#']
@@ -51,7 +73,6 @@ class TunatorLSTM:
         sharps_oct = [note + str(i) for i in range(octaves) for note in sharps]
         flats_oct = [note + str(i) for i in range(octaves) for note in flats]
         flat_sharp_dict = dict(zip(flats_oct, sharps_oct))
-
         self.piano_roll = [
             note + str(i) for i in range(octaves) for note in sharps_scale]
         self.piano_roll_dict = {
@@ -60,6 +81,7 @@ class TunatorLSTM:
             {flat: self.piano_roll_dict[sharp]
              for flat, sharp in flat_sharp_dict.items()})
 
+        # prepare data
         self.song_file_dict = self.get_song_file_dict()
         songs = list(self.song_file_dict)
         random.shuffle(songs)
@@ -68,6 +90,7 @@ class TunatorLSTM:
         self.val_songs = songs[split:]
         self.update_datastore()
 
+        # instantiate tensor generators for lazy evaluation during training
         self.train_tensor_gen = NoteChordOneHotTensorGen(
             self.train_songs,
             self.hparams.batch_size,
@@ -126,6 +149,11 @@ class TunatorLSTM:
         return datetime.now()
 
     def build_model(self):
+        """
+
+        Returns:
+
+        """
         self.model = Sequential()
         input_shape = (None, self.n_vocab)
 
@@ -152,10 +180,23 @@ class TunatorLSTM:
         self.model.compile(loss='binary_crossentropy', optimizer='rmsprop')
 
     def load_model(self, model_path):
+        """
+
+        Args:
+            model_path:
+
+        Returns:
+
+        """
         self.build_model()
         self.model.load_weights(model_path)
 
     def train(self):
+        """
+
+        Returns:
+
+        """
         timestamp = datetime.now()
         log_name = f'note-chord-one-hot-songs_{timestamp}'
         tensorboard = TensorBoard(log_dir=f'logs/{log_name}', histogram_freq=1, write_graph=True, write_grads=True, batch_size=4) #write_images
@@ -190,6 +231,13 @@ class TunatorLSTM:
         )
 
     def get_song_file_dict(self):
+        """
+        Creates a lookup dictionary to get filepath from song name.
+        Returns:
+            song_file_dict (dict): Dictionary with song names as keys and
+                filepaths relative to the current directory as values, including
+                file extension.
+        """
         file_exts = ('*.mid', '*.midi', '*.MID', '*.MIDI')
         song_files = list()
         for ext in file_exts:
@@ -201,6 +249,21 @@ class TunatorLSTM:
         return song_file_dict
 
     def query_datastore(self, query, grp_path='songs'):
+        """
+        Checks datastore at `hdf5_path` for keys specified by `query` within the
+        group specified by `grp_path` non-recursively. If the datastore does not
+        exist, the query will not raise an error, but instead return all of the
+        queried items in `not_found` and none of them in `found`.
+        Args:
+            query (iterable): keys for which to search within the grp_path in
+                the datastore
+            grp_path (str): path to the group in which to search for they keys
+
+        Returns:
+            found (set): query items that were found in the group
+            not_found (set): query items that were not found in the group
+        """
+        # TODO: what about querying the base group?
         if os.path.isfile(self.hdf5_path):
             grp = h5py.File(self.hdf5_path, 'r')[grp_path]
             keys = list(grp.keys())
@@ -217,6 +280,18 @@ class TunatorLSTM:
         that are not already present in the datastore.
         """
         def _parse_midi(song):
+            """
+            The songs are transposed to the key of A. The parser extracts
+            the lowest numbered part that has greater than 50 notes. If that
+            doesn't work, it flattens all of the parts into a single "flat" part
+            which contains all the instruments.
+            Args:
+                song:
+
+            Returns:
+
+            """
+            # TODO: convert output to namedtuples with metadata
             file = self.song_file_dict[song]
             print(f'updating datastore: {file}...')
             midi = m21.converter.parse(file)
@@ -248,6 +323,10 @@ class TunatorLSTM:
             return notes_to_parse
 
         def _parse_notes(notes_to_parse):
+            """
+            Parse MIDI data to a dictionary of timesteps and corresponding
+            notes.
+            """
             notes = dict()
             for elem in notes_to_parse:
                 time = elem.offset
@@ -310,6 +389,15 @@ class TunatorLSTM:
             return notes, min_space
 
         def _write_to_datastore(notes, min_space):
+            """
+            Write a sequence of piano roll integers to HDF5 datastore.
+            Args:
+                notes (np.array):
+                min_space (float):
+
+            Returns:
+
+            """
             notes_list = np.array([np.array(list(notes[k])).astype('i8') for k in sorted(notes)])
             with h5py.File(self.hdf5_path, 'a') as f:
                 grp = f.create_group(f'songs/{song}')
@@ -330,6 +418,15 @@ class TunatorLSTM:
             _write_to_datastore(notes, min_space)
 
     def compose(self, timesteps):
+        """
+        Generate MIDI file of length `timesteps` starting from a random seed
+        note from a song in the datastore.
+        Args:
+            timesteps (int): number to timesteps to synthesize
+
+        Returns:
+
+        """
         seed_note = np.array([])
         while seed_note.size == 0:
             with h5py.File(self.hdf5_path) as f:
@@ -435,6 +532,12 @@ class TensorGen(ABC):
 
 
 class NoteChordOneHotTensorGen(Sequence):
+    """
+    Batch generator for multi-hot piano roll tensors for neural network training
+    on musical data. Data is read from HDF5 datasets and encoded to piano roll
+    vectors. This class is intended to be used with the Keras `fit_generator`
+    method.
+    """
     def __init__(self, songs, batch_size, timesteps, hdf5_path, vocab_dict, n_vocab):
         self.songs = songs
         self.batch_size = batch_size
@@ -512,6 +615,15 @@ class NoteChordOneHotTensorGen(Sequence):
         return seq_info
 
     def build_vector(self, seq):
+        """
+        Build one- or multi-hot encoded vector on piano roll from piano roll
+        integers
+        Args:
+            seq:
+
+        Returns:
+
+        """
         # create a dictionary to map pitches to integers
         X = np.array([np.zeros(self.n_vocab) for i in seq])
         for i, event in enumerate(seq):
