@@ -1,3 +1,7 @@
+"""
+This script is a modified copy of a poriton of https://github.com/aniawsz/rtmonoaudio2midi
+"""
+
 from collections import deque
 import itertools
 import numpy as np
