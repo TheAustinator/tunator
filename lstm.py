@@ -1,3 +1,7 @@
+"""
+Parts of this code are inspired by https://github.com/Skuldur/Classical-Piano-Composer and
+https://www.kaggle.com/wfaria/midi-music-data-extraction-using-music21/notebook
+"""
 from abc import ABC, abstractmethod
 from datetime import datetime
 import fractions
