@@ -16,13 +16,13 @@ Step 3: Generate new, similar MIDIs
 
 All steps are a work in progress based on prior work.
 
-## Vocal Isolation
+## Step 1: Vocal Isolation
 There are several implementations based on (Spotify's U-Net)[https://ismir2017.smcnus.org/wp-content/uploads/2017/10/171_Paper.pdf] on Github, which I haven't had time to look through yet.
 
-## MIDI Transcription
+## Step 2: MIDI Transcription
 It appears that  (aniawsz's)[https://github.com/aniawsz] (Spectral_Analyzer)[https://github.com/aniawsz/rtmonoaudio2midi/blob/master/audiostream.py] could be easily adapted to this purpose.
 
-## Melody Generation
+## Step 3: Melody Generation
 I would like to implement something based on magenta's (MusicVAE)[https://arxiv.org/pdf/1803.05428.pdf]. Most of the work on this repo so far has been building the pipeline. Currently, the pipeline from MIDI files to generated MIDI files is complete, however, the current model is just a basic LSTM as a placeholder. 
 
 ## Ideas and Challenges
