@@ -9,7 +9,9 @@ Will fill in later, but contact me if you need help in the meantime.
 The goal of this project is to allow users to synthesize melodies in the same musical style as their favorite singers. There are three steps in this process:
 
 Step 1: Extract vocals from raw audio
+
 Step 2: Transcribe vocals to MIDI format
+
 Step 3: Generate new, similar MIDIs
 
 All steps are a work in progress based on prior work.
@@ -23,6 +25,6 @@ It appears that  (aniawsz's)[https://github.com/aniawsz] (Spectral_Analyzer)[htt
 ## Melody Generation
 I would like to implement something based on magenta's (MusicVAE)[https://arxiv.org/pdf/1803.05428.pdf]. Most of the work on this repo so far has been building the pipeline. Currently, the pipeline from MIDI files to generated MIDI files is complete, however, the current model is just a basic LSTM as a placeholder. 
 
-# Ideas and Challenges
+## Ideas and Challenges
 
 One preprocessing step that could make the modeling much easier is a model that can parition the input MIDI files into parts (e.g. verse, chorus, bridge). Since each of these sequences tend to sound different, classifying them beforehand could allow users to sample one type of melody specifically. 
